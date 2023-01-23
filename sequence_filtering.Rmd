@@ -1,0 +1,248 @@
+---
+title: "filtering sequences"
+author: "Kimberly Ledger"
+date: "2023-01-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+DADA2 processing of trimmed reads (i.e. primer sequences already removed)
+
+## access Rstudio on the VM 
+* access the Rstudio server here: http://161.55.97.134:8787/
+* Type in username and pw associated with VM
+
+load packages
+```{r, warning=FALSE}
+library(dada2)
+```
+
+when running this code here are the only things that need to be customized
+- file path 
+- filter parameters and truncate lengths  
+- merged sequence length filter 
+
+name file path and check correct files are there - UPDATE FILE PATH DEPENDING ON DATASET 
+```{r}
+#path <- "/genetics/edna/workdir/gadids/20230111/S1_ND1_529_789/trimmed/"
+#path <- "/genetics/edna/workdir/gadids/20230111/S2_ND1_651_862/trimmed/"
+#path <- "/genetics/edna/workdir/gadids/20230111/S3_ND5_547_800/trimmed/"
+#path <- "/genetics/edna/workdir/gadids/20230111/S4_COX3_422v1_598/trimmed/"
+#path <- "/genetics/edna/workdir/gadids/20230111/S5_COX3_422v2_598/trimmed/"
+#path <- "/genetics/edna/workdir/gadids/20230111/S6_ND5_1036_1285/trimmed/"
+
+path <- "/genetics/edna/workdir/bristolbay/trimmed"
+head(list.files(path))
+```
+
+create lists for the forward and reverse fastq files 
+```{r}
+# Forward and reverse fastq filenames have format: SAMPLENAME-N_SX_R1.fastq and SAMPLENAME-N_SX_R2.fastq
+fnFs <- sort(list.files(path, pattern="_R1.fastq", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_R2.fastq", full.names = TRUE))
+# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
+```
+
+## inspect read quality 
+
+visualize quality of forward reads - these are plots of the first two samples
+```{r, warning=FALSE}
+plotQualityProfile(fnFs[11:12])
+```
+
+visualize quality of reverse reads - these are plots of the first two samples
+```{r, warning=FALSE}
+plotQualityProfile(fnRs[11:12])
+```
+
+
+## filter and trim 
+
+assign filenames 
+```{r}
+# Place filtered files in filtered/ subdirectory
+filtFs <- file.path(path, "filtered_kl", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered_kl", paste0(sample.names, "_R_filt.fastq.gz"))
+names(filtFs) <- sample.names
+names(filtRs) <- sample.names
+```
+
+
+**edit this code for trimming**
+Use standard filtering parameters: maxN=0 (DADA2 requires no Ns), truncQ=2, rm.phix=TRUE and maxEE=2.
+```{r}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(90,90),
+              maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+              compress=TRUE, multithread=FALSE) # On Windows set multithread=FALSE
+head(out)
+```
+
+
+## learn the error rates 
+this takes a few minutes to run
+```{r}
+errF <- learnErrors(filtFs, multithread=TRUE)
+errR <- learnErrors(filtRs, multithread=TRUE)
+```
+
+plot
+```{r}
+plotErrors(errR, nominalQ=TRUE)
+```
+
+this shows the error rates for each possible nucleotide transition. the red lines are the expected error rates. just check that the estimated error rates (black lines) are a good fit to the observed rates (points). 
+
+## subset to include filtFs and filtRs where files exist
+```{r}
+filtFs <- filtFs[file.exists(filtFs)]
+filtRs <- filtRs[file.exists(filtRs)]
+```
+
+
+## apply the sample inference to the filtered and trimmed reads
+```{r, results= "hide"}
+dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
+dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
+```
+
+take a look at the output
+```{r}
+dadaFs[[1]]
+```
+
+
+## merge paired reads
+```{r, warnings = FALSE, results= "hide"}
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
+```
+
+Inspect the merger data.frame from the first sample
+```{r}
+#head(mergers[[1]])
+```
+
+
+## construct sequence table 
+
+```{r}
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab)
+```
+
+Inspect distribution of sequence lengths
+```{r}
+table(nchar(getSequences(seqtab)))
+```
+
+Remove sequences that are much longer or shorter than expected - UPDATE THE VALUES HERE BASED ON PRIMERSET
+```{r}
+#seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 221] #S1
+#seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 162] #S2
+#seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 204] #S3
+#seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 129] #S4 and S5
+#seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 205] #S6
+
+seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 153] #salmon
+```
+
+Remove chimeras
+```{r}
+seqtab.nochim <- removeBimeraDenovo(seqtab2, method="consensus", multithread=TRUE, verbose=TRUE)
+dim(seqtab.nochim)
+sum(seqtab.nochim)/sum(seqtab2)
+```
+
+Track reads through the pipeline
+```{r}
+getN <- function(x) sum(getUniques(x))
+track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab2), rowSums(seqtab.nochim))
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "correct_length","nonchim")
+rownames(track) <- sample.names
+head(track)
+```
+
+for S2, because S2-g05-S2-3-H had zero reads after filter output, the columns of track don't line up... for now it's faster for me to manually edit this than to figure out how to code... 
+```{r}
+#track[50,] <- c(0,0,0,0,0,0,0)
+#track[51,] <- c(1,1,1,1,1,1,1)
+```
+
+for S5, because S2-g12-S5-3-H and S2-g12-S5-3-L had zero reads after filter output
+```{r}
+#track[50,] <- c(0,0,0,0,0,0,0)
+#track[51,] <- c(0,0,0,0,0,0,0)
+```
+
+
+export dada2 filtering summary 
+```{r}
+out_path <- file.path(path, "filtered_klls", "outputs")
+
+write.csv(track, file = file.path(out_path, "track.csv"))
+```
+
+
+**come back and re-evaluate read processing at a later time** there some big cuts of reads during merging and removing chimeras steps
+
+
+## export for taxonomic identification
+we will want to use the "seqtab.nochim" ASV table for taxonomic analyses
+
+```{r}
+write.csv(seqtab.nochim, file.path(out_path, "seqtab.csv"))
+```
+
+
+## also export the seqtab as a Fasta
+```{r}
+sq <- getSequences(seqtab.nochim)
+id <- paste0("ASV", 1:length(sq))
+
+library(seqinr)
+write.fasta(sequences = as.list(sq), names=id, file.out = file.path(out_path, "myasvs.fasta"))
+```
+
+
+
+## and export the seqtab table with the numbered ASVs headers that correspond to those output in the FASTA file.
+```{r}
+# Make map between brief names and full sequences
+briefToSeq <- colnames(seqtab.nochim)
+names(briefToSeq) <- paste0("ASV", seq(ncol(seqtab.nochim))) # Seq1, Seq2, ...
+# Make new sequence table with brief names
+st.brief <- seqtab.nochim
+colnames(st.brief) <- names(briefToSeq)
+
+# export the seq table with brief names:
+write.csv(st.brief, file= file.path(out_path, "ASVtable.csv"))
+```
+
+
+## create table of ASV labels and ASV sequences
+```{r}
+asv <- colnames(seqtab.nochim)
+asv_id <- paste0("ASV", 1:length(asv))
+asv_table <- data.frame(asv, asv_id)
+
+write.csv(asv_table, file = file.path(out_path, "asv_id_table.csv"))
+```
+
+copied files to my local computer...
+from command center (not logged into the VM): 
+
+
+scp kimberly.ledger@161.55.97.134:/genetics/edna/workdir/gadids/20230111/S1_ND1_529_789/trimmed/filtered/outputs/* Downloads
+scp kimberly.ledger@161.55.97.134:/genetics/edna/workdir/gadids/20230111/S2_ND1_651_862/trimmed/filtered/outputs/* Downloads
+scp kimberly.ledger@161.55.97.134:/genetics/edna/workdir/gadids/20230111/S3_ND5_547_800/trimmed/filtered/outputs/* Downloads
+scp kimberly.ledger@161.55.97.134:/genetics/edna/workdir/gadids/20230111/S4_COX3_422v1_598/trimmed/filtered/outputs/* Downloads
+scp kimberly.ledger@161.55.97.134:/genetics/edna/workdir/gadids/20230111/S5_COX3_422v2_598/trimmed/filtered/outputs/* Downloads
+scp kimberly.ledger@161.55.97.134:/genetics/edna/workdir/gadids/20230111/S6_ND5_1036_1285/trimmed/filtered/outputs/* Downloads
+scp kimberly.ledger@161.55.97.134:/genetics/edna/workdir/bristolbay/trimmed/filtered_kl/outputs/* Downloads
+
+

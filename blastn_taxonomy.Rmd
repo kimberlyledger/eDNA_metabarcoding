@@ -1,0 +1,113 @@
+---
+title: "blastn_tax_analysis"
+author: "Kimberly Ledger"
+date: "2023-01-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load-libraries}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+```
+
+```{r load-output-from-taxonkit}
+#taxonomy <-read.delim("/genetics/edna/workdir/gadids/20230111/S1_ND1_529_789/trimmed/filtered/outputs/blastn_taxlineage.txt", header = FALSE, na.strings=c(""," ","NA"))
+
+#taxonomy <-read.delim("/genetics/edna/workdir/gadids/20230111/S2_ND1_651_862/trimmed/filtered/outputs/blastn_taxlineage.txt", header = FALSE, na.strings=c(""," ","NA"))
+
+#taxonomy <-read.delim("/genetics/edna/workdir/gadids/20230111/S3_ND5_547_800/trimmed/filtered/outputs/blastn_taxlineage.txt", header = FALSE, na.strings=c(""," ","NA"))
+
+#taxonomy <-read.delim("/genetics/edna/workdir/gadids/20230111/S4_COX3_422v1_598/trimmed/filtered/outputs/blastn_taxlineage.txt", header = FALSE, na.strings=c(""," ","NA"))
+
+#taxonomy <-read.delim("/genetics/edna/workdir/gadids/20230111/S5_COX3_422v2_598/trimmed/filtered/outputs/blastn_taxlineage.txt", header = FALSE, na.strings=c(""," ","NA"))
+
+#taxonomy <-read.delim("/genetics/edna/workdir/gadids/20230111/S6_ND5_1036_1285/trimmed/filtered/outputs/blastn_taxlineage.txt", header = FALSE, na.strings=c(""," ","NA"))
+
+#taxonomy <-read.delim("/genetics/edna/workdir/bristolbay/trimmed/filtered_kl/outputs/blastn_taxlineage.txt", header = FALSE, na.strings=c(""," ","NA"))
+
+#taxonomy <- read.delim("/genetics/edna/workdir/gadids/20230111/S1_ND1_529_789/trimmed/filtered/outputs/test2_blastn_taxlineage.txt", header = FALSE, na.strings=c(""," ","NA"))
+
+head(taxonomy)
+```
+
+
+# clean up the header a bit
+```{r}
+# use the full taxonomy rather than the seq id to collapse identical entries
+tax_df <- taxonomy %>%
+  filter(V4 > 100) %>% # make sure all retained matches are >100 bp
+  select(-V2, -V5, -V6, -V7, -V14, -V8, -V9, -V10, -V11, -V12, -V15, -V16) %>%  #remove unnecessary columns
+  group_by(V1, V17) %>% # group by the sequence key and the full taxonomy to reduce duplicate entries
+  unique() %>% # doing that reduced the number of entries from 146k to 17k
+  rename(qseqid=V1, perc_id=V3, length=V4, sscinames=V13, taxonomy=V17) %>% #rename headers
+  filter(!str_detect(sscinames, "environmental")) %>% # filter out any environmental samples
+  filter(!str_detect(sscinames, "synthetic")) #%>% # filter out any synthetic "samples"
+  #filter(perc_id >= 98) # seems like some of the matches below 98% are dubious (jellyfish and herring <1% different??)
+```
+
+```{r how-many-total-ASVs-w-taxonomy}
+tax_df %>% 
+  ungroup() %>%
+  select(qseqid) %>%
+  unique() %>%
+  nrow
+```
+
+# reformat table 
+
+```{r}
+# formatting the taxonomy variables
+taxon_df <- tax_df %>%
+  filter(str_detect(taxonomy, ";")) %>%
+  separate(taxonomy, into=c("kingdom", "phylum", "class", "order", "family", "genus", "species"), sep = ";")
+```
+
+
+## Sort and clean-up the results based on % identity
+
+```{r}
+# 1. rename Gadus ogac to Gadus macrocephalus
+
+taxon_df$species[taxon_df$species == "Gadus ogac"] <- "Gadus macrocephalus"
+```
+
+```{r}
+taxon_df <- taxon_df %>%
+  select(qseqid, species) %>%
+  group_by(qseqid, species) %>%
+  unique()
+```
+
+do any ASVs have more than one species-level id? 
+```{r}
+taxon_df[duplicated(taxon_df$qseqid),]
+```
+
+## create final taxonomy table for output
+```{r}
+taxonomy <- taxon_df %>%
+  rename(ASV = qseqid) %>%
+  rename(taxon = species)
+
+taxonomy$taxonomic_level <- "species"
+```
+
+
+```{r}
+#write.csv(taxonomy, "/genetics/edna/workdir/gadids/20230111/S1_ND1_529_789/trimmed/filtered/outputs/asv_taxonomy_blastn.csv")
+#write.csv(taxonomy, "/genetics/edna/workdir/gadids/20230111/S2_ND1_651_862/trimmed/filtered/outputs/asv_taxonomy_blastn.csv")
+#write.csv(taxonomy, "/genetics/edna/workdir/gadids/20230111/S3_ND5_547_800/trimmed/filtered/outputs/asv_taxonomy_blastn.csv")
+#write.csv(taxonomy, "/genetics/edna/workdir/gadids/20230111/S4_COX3_422v1_598/trimmed/filtered/outputs/asv_taxonomy_blastn.csv")
+#write.csv(taxonomy, "/genetics/edna/workdir/gadids/20230111/S5_COX3_422v2_598/trimmed/filtered/outputs/asv_taxonomy_blastn.csv")
+#write.csv(taxonomy, "/genetics/edna/workdir/gadids/20230111/S6_ND5_1036_1285/trimmed/filtered/outputs/asv_taxonomy_blastn.csv")
+```
+
+did not output asv taxonomy for S6 because multiple species of gadids were included in the same ASV... i.e. multiple species have >96% similarity for some ASVs.  i could go back and re run the blastn with more stringent perc_identity cut off. not doing this for now because S5 was not included in mock community tests. 
+
+
