@@ -12,7 +12,7 @@ for example:  cp /genetics/edna/rawdata/20230111_gadidmockcomm_bristolbay/* /gen
 
 3. and then move reads into project-specific folders  
 
-for example: mv /genetics/edna/rawdata/workdir/gadids/20230111/e01* /genetics/edna/workdir/bristolbay/20230111
+for example: mv /genetics/edna/rawdata/workdir/gadids/20230111/e01* /genetics/edna/workdir/bristolbay/20230111  
 **note: it is helpful to use revalent sample IDs in MiSeq sample sheet for easy organizing of specific files** 
 
 4. fastq files output my MiSeq have already been demultiplex'd so we can move onto removing primers from amplicon reads using dada2 cutadapt tool
@@ -26,14 +26,14 @@ MiDeca primer sequences
 MiDeca_F: GGACGATAAGACCCTATAAA
 MiDeca_R: ACGCTGTTATCCCTAAAG
 
-set DATA= to the directory with the rawdata files:
+set DATA= to the directory with the rawdata files:   
 DATA=/genetics/edna/workdir/crabs/20230111
 
-below, the first set of () creates an array, containing n elements of the desired trimmed and unique names:
+below, the first set of () creates an array, containing n elements of the desired trimmed and unique names:   
 NAMELIST=$(ls ${DATA} | sed 's/e*_L001.*//' | uniq)
 echo "${NAMELIST}"
 
-iterate over all elements in the above array:
+iterate over all elements in the above array:   
 for i in ${NAMELIST}; do
    cutadapt --discard-untrimmed -g GGACGATAAGACCCTATAAA -G ACGCTGTTATCCCTAAAG -o trimmed/${i}_R1.fastq.gz -p trimmed/${i}_R2.fastq.gz "$DATA/${i}_L001_R1_001.fastq.gz" "$DATA/${i}_L001_R2_001.fastq.gz";
 done
