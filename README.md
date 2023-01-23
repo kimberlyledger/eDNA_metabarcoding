@@ -46,7 +46,7 @@ for example: pigz -d trimmed/*.gz
 
 6. Create a "filtered" folder within the trimmed folder. and an "outputs" folder within the filtered folder. 
 
-7. Run sequence_filtering.Rmd for DADA2 processing of trimmed reads
+7. Run sequence_filtering.Rmd for DADA2 processing of trimmed reads   
 *when running this code here are the only things that need to be customized:* 
 - file path 
 - filter parameters and truncate lengths  
