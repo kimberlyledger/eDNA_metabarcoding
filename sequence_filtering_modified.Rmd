@@ -28,7 +28,7 @@ when running this code here are the only things that need to be customized
 
 name file path and check correct files are there - UPDATE FILE PATH DEPENDING ON DATASET - this should point to the trimmed folder
 ```{r}
-path <- "/genetics/edna/workdir/gadids/20230921_aquaria/trimmed/"
+path <- "/genetics/edna/workdir/bottomtrawl_2022/20230406/trimmed/"
 head(list.files(path))
 ```
 
@@ -47,12 +47,12 @@ sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
 
 visualize quality of forward reads 
 ```{r, warning=FALSE}
-plotQualityProfile(fnFs[1:2])
+plotQualityProfile(fnFs[41:42])
 ```
 
 visualize quality of reverse reads
 ```{r, warning=FALSE}
-plotQualityProfile(fnRs[1:2])
+plotQualityProfile(fnRs[51:52])
 ```
 
 
@@ -61,8 +61,8 @@ plotQualityProfile(fnRs[1:2])
 assign filenames 
 ```{r}
 # Place filtered files in filtered/ subdirectory
-filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
-filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+filtFs <- file.path(path, "filtered2", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered2", paste0(sample.names, "_R_filt.fastq.gz"))
 names(filtFs) <- sample.names
 names(filtRs) <- sample.names
 ```
@@ -72,10 +72,10 @@ names(filtRs) <- sample.names
 Use standard filtering parameters: maxN=0 (DADA2 requires no Ns), truncQ=2, rm.phix=TRUE and maxEE=2.
 
 all gadid primer sequences usually: truncLen=c(120,120)
-mifish and mideca sequences: truncLen=c(100,100)
+mifish and mideca sequences: truncLen=c(100,100) (using on first filtering of bottomtrawl_2022/2020406 seqs) -for filter2 i used 110 
 for salmon cytB trying: truncLen=c(100,80)
 ```{r}
-out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(120,120),
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(110,110),
               maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
               compress=TRUE, multithread=FALSE) # On Windows set multithread=FALSE
 head(out)
@@ -116,11 +116,10 @@ dadaFs[[1]]
 
 
 ## merge paired reads
-**can try out less stringent merging parameters to see if more identifiable reads are recovered**
 ```{r, warnings = FALSE, results= "hide"}
-mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
-#mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE, minOverlap = 8, maxMismatch = 2)
+mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE, minOverlap = 8, maxMismatch = 2)
 ```
+
 
 Inspect the merger data.frame from the first sample
 ```{r}
@@ -135,15 +134,25 @@ seqtab <- makeSequenceTable(mergers)
 dim(seqtab)
 ```
 
+```{r}
+seqtab_test1 <- makeSequenceTable(mergers_test1)
+dim(seqtab_test1)
+```
+
+
 Inspect distribution of sequence lengths
 ```{r}
 table(nchar(getSequences(seqtab)))
 ```
 
+Inspect distribution of sequence lengths
+```{r}
+table(nchar(getSequences(seqtab_test1)))
+```
 
 Remove sequences that are much longer or shorter than expected - UPDATE THE VALUES HERE BASED ON PRIMERSET
 ```{r}
-seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 221] #gadidS1
+#seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 221] #gadidS1
 #seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 162] #gadidS2
 #seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 204] #gadidS3
 #seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 129] #gadidS4 and S5
@@ -151,17 +160,30 @@ seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 221] #gadidS1
 
 #seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% c(151:154)] #salmon
 #seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% c(153:184)] #mideca (amplicon size according to original publication)
-#seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% c(162:182)] #mifish
-
-#checking reads of sizes for gadidS1 
-#seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% 225]
+seqtab2 <- seqtab[,nchar(colnames(seqtab)) %in% c(164:181)] #mifish
 ```
+
+```{r}
+seqtab_test1_1 <- seqtab_test1[,nchar(colnames(seqtab_test1)) %in% c(164:181)] #mifish
+```
+
+```{r}
+seqtab_toobig <- seqtab_test1[,nchar(colnames(seqtab_test1)) %in% c(181:212)] #mifish
+```
+
 
 Remove chimeras
 ```{r}
 seqtab.nochim <- removeBimeraDenovo(seqtab2, method="consensus", multithread=TRUE, verbose=TRUE)
 dim(seqtab.nochim)
 sum(seqtab.nochim)/sum(seqtab2)
+```
+
+Remove chimeras
+```{r}
+seqtab.nochim_test <- removeBimeraDenovo(seqtab_toobig, method="consensus", multithread=TRUE, verbose=TRUE)
+dim(seqtab.nochim_test)
+sum(seqtab.nochim_test)/sum(seqtab_toobig)
 ```
 
 Track reads through the pipeline
@@ -174,31 +196,57 @@ rownames(track) <- sample.names
 head(track)
 ```
 
+Track reads through the pipeline
+```{r}
+getN <- function(x) sum(getUniques(x))
+track_test <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers_test1, getN), rowSums(seqtab_toobig), rowSums(seqtab.nochim_test))
+# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+colnames(track_test) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "correct_length","nonchim")
+rownames(track_test) <- sample.names
+head(track_test)
+```
+
+
+
+for S2, because S2-g05-S2-3-H had zero reads after filter output, the columns of track don't line up... for now it's faster for me to manually edit this than to figure out how to code... 
+```{r}
+#track[50,] <- c(0,0,0,0,0,0,0)
+#track[51,] <- c(1,1,1,1,1,1,1)
+```
+
+for S5, because S2-g12-S5-3-H and S2-g12-S5-3-L had zero reads after filter output
+```{r}
+#track[50,] <- c(0,0,0,0,0,0,0)
+#track[51,] <- c(0,0,0,0,0,0,0)
+```
+
 
 export dada2 filtering summary 
 ```{r}
-out_path <- file.path(path, "filtered", "outputs")
+out_path <- file.path(path, "filtered2", "outputs")
 
-write.csv(track, file = file.path(out_path, "track.csv"))
+write.csv(track_test, file = file.path(out_path, "track_toobig.csv"))
 ```
 
+
+**come back and re-evaluate read processing at a later time** there some big cuts of reads during merging and removing chimeras steps
 
 
 ## export for taxonomic identification
 we will want to use the "seqtab.nochim" ASV table for taxonomic analyses
 
 ```{r}
-write.csv(seqtab.nochim, file.path(out_path, "seqtab.csv"))
+write.csv(seqtab.nochim_test, file.path(out_path, "seqtab_toobig.csv"))
 ```
 
 
 ## also export the seqtab as a Fasta
 ```{r}
-sq <- getSequences(seqtab.nochim)
+sq <- getSequences(seqtab.nochim_test)
 id <- paste0("ASV", 1:length(sq))
 
 library(seqinr)
-write.fasta(sequences = as.list(sq), names=id, file.out = file.path(out_path, "myasvs.fasta"))
+write.fasta(sequences = as.list(sq), names=id, file.out = file.path(out_path, "myasvs_toobig.fasta"))
 ```
 
 
@@ -206,24 +254,24 @@ write.fasta(sequences = as.list(sq), names=id, file.out = file.path(out_path, "m
 ## and export the seqtab table with the numbered ASVs headers that correspond to those output in the FASTA file.
 ```{r}
 # Make map between brief names and full sequences
-briefToSeq <- colnames(seqtab.nochim)
-names(briefToSeq) <- paste0("ASV", seq(ncol(seqtab.nochim))) # Seq1, Seq2, ...
+briefToSeq <- colnames(seqtab.nochim_test)
+names(briefToSeq) <- paste0("ASV", seq(ncol(seqtab.nochim_test))) # Seq1, Seq2, ...
 # Make new sequence table with brief names
-st.brief <- seqtab.nochim
+st.brief <- seqtab.nochim_test
 colnames(st.brief) <- names(briefToSeq)
 
 # export the seq table with brief names:
-write.csv(st.brief, file= file.path(out_path, "ASVtable.csv"))
+write.csv(st.brief, file= file.path(out_path, "ASVtable_toobig.csv"))
 ```
 
 
 ## create table of ASV labels and ASV sequences
 ```{r}
-asv <- colnames(seqtab.nochim)
+asv <- colnames(seqtab.nochim_test)
 asv_id <- paste0("ASV", 1:length(asv))
 asv_table <- data.frame(asv, asv_id)
 
-write.csv(asv_table, file = file.path(out_path, "asv_id_table.csv"))
+write.csv(asv_table, file = file.path(out_path, "asv_id_table_toobig.csv"))
 ```
 
 copied files to my local computer...

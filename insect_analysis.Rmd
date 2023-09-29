@@ -1,0 +1,84 @@
+---
+title: "taxonomic analysis of eDNA samples"
+author: "Kimberly Ledger"
+date: "2022-11-08"
+output: github_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(eval = FALSE)
+```
+
+this script using the insect R package for taxonomic identification of amplicon sequence variants and follows this tutorial: https://cran.r-project.org/web/packages/insect/vignettes/insect-vignette.html
+
+load libraries
+```{r}
+library(insect)
+```
+
+read in the data (ASV table from DADA2)
+make sure sample names are designated as row names, and not in their own column 
+```{r}
+seqs <- read.csv("/genetics/edna/workdir/GOApcod_2021/combined/trimmed/filtered/outputs/seqtab.csv", row.names = 1)
+```
+
+assign taxon IDs to the DADA2 output
+```{r}
+x <- char2dna(colnames(seqs))
+## name the sequences sequentially
+names(x) <- paste0("ASV", seq_along(x))
+```
+
+download the MiFish classifier from the insect tutorial locally (had to do this offsite) and then copy to the VM using the command prompt:  scp Downloads/classifier.rds kimberly.ledger@161.55.97.134:/home/kimberly.ledger/NBS_eDNA 
+```{r}
+classifier <- readRDS("/home/kimberly.ledger/NBS_eDNA/classifier.rds")
+classifier
+names(attributes(classifier))
+```
+
+classify 
+* this takes around a minute to run 
+```{r}
+my_class_1_0 <- classify(x, classifier, threshold = 1)
+```
+
+output full classification table
+```{r}
+write.csv(my_class_1_0, "/genetics/edna/workdir/GOApcod_2021/combined/trimmed/filtered/outputs/asv_taxonomy_insect_1_0.csv")
+```
+
+
+output this table for comparison with blastn taxonomy 
+```{r}
+asv_insect <- my_class %>%
+  select(representative, taxon, rank)
+
+write.csv(asv_insect, "/genetics/edna/workdir/GOApcod_2021/combined/trimmed/filtered/outputs/asv_taxonomy_insect.csv")
+```
+
+
+if needed, remove column names that overwhelm the ASV table when printed... 
+```{r}
+colnames(seqs) <- NULL
+```
+
+transpose and bind the ASV table to the table of taxonomic information
+```{r}
+my_class_bind <- cbind(my_class, t(seqs))
+```
+
+Any sequences that return exact hits with at least one training sequence (or near matches if ping = 0.99 or similar) are assigned a score of NA
+
+create an aggregated table that includes only one row for each unique taxon
+```{r}
+taxa <- aggregate(my_class_bind[3:12], my_class_bind["taxID"], head, 1)
+counts <- aggregate(my_class_bind[13:ncol(my_class_bind)], my_class_bind["taxID"], sum)
+my_class_short <- merge(taxa, counts, by = "taxID")
+```
+
+output taxonomic identification 
+```{r}
+write.csv(my_class_short, "/genetics/edna/workdir/bottomtrawl_2022/20230623/trimmed/filtered/outputs/taxon_table.csv")
+```
+
+

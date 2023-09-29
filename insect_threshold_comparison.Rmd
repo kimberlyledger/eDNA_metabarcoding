@@ -1,0 +1,63 @@
+---
+title: "compare insect outputs"
+author: "Kimberly Ledger"
+date: "2023-07-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+libraries
+```{r}
+library(tidyverse)
+library(dplyr)
+```
+
+
+read in the three insect classifications
+```{r}
+insect_0.8 <- read.csv("/genetics/edna/workdir/GOApcod_2021/combined/trimmed/filtered/outputs/asv_full_taxonomy_insect.csv")  %>%
+  select(representative, taxon, rank)
+insect_0.9 <- read.csv("/genetics/edna/workdir/GOApcod_2021/combined/trimmed/filtered/outputs/asv_taxonomy_insect_0_9.csv")  %>%
+  select(representative, taxon, rank)
+insect_1.0 <- read.csv("/genetics/edna/workdir/GOApcod_2021/combined/trimmed/filtered/outputs/asv_taxonomy_insect_1_0.csv") %>%
+  select(representative, taxon, rank)
+```
+
+```{r}
+all_together <- insect_0.8 %>%
+  left_join(insect_0.9, by = "representative") %>%
+  left_join(insect_1.0, by = "representative")
+```
+
+how many asvs are in agreement for all three? 
+```{r}
+matches <- all_together %>%
+  group_by(taxon.x, taxon.y, taxon) %>%
+  filter(n() > 1) %>%
+  ungroup()
+```
+
+```{r}
+mismatches <- all_together %>%
+  filter(!representative %in% matches$representative)
+```
+
+hmm this isn't filtering right... anyways, all but a few "no rank" and "class" rank id's differ when the insect classifier is changed... 
+
+```{r}
+eightvnine <- insect_0.8 %>%
+  left_join(insect_0.9, by = "representative")
+```
+
+```{r}
+eightvnine_match <- eightvnine %>%
+  filter(taxon.x == taxon.y)
+
+eightvnine_mismatch <- eightvnine %>%
+  filter(taxon.x != taxon.y)
+```
+
+
